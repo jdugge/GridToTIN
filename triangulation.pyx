@@ -29,13 +29,12 @@ cdef class Triangulation:
     cdef public np.ndarray Hmap
     cdef heap
     
-    def __cinit__(self, np.ndarray[DTYPE_t, ndim=2] H,
-                  int minX = 0, int maxX = 100, int minY = 0, int maxY = 100):
+    def __cinit__(self, np.ndarray[DTYPE_t, ndim=2] H):
         self.Hmap = H
-        minX = 0
-        minY = 0
-        maxX = self.Hmap.shape[1] - 1
-        maxY = self.Hmap.shape[0] - 1
+        cdef int minX = 0
+        cdef int minY = 0
+        cdef int maxX = self.Hmap.shape[1] - 1
+        cdef int maxY = self.Hmap.shape[0] - 1
         
         self.heap = Heap()
         
@@ -109,6 +108,8 @@ cdef class Triangulation:
         def __get__(self): return [self.edgeDict[key]
             for key in self.edgeDict]
     
+    # The walking method for finding a triangle. Not used in the main code, but
+    # kept because it's pretty to look at
     def locate(self, Vertex v):
         cdef Edge e = self.base
         while (True):
@@ -131,6 +132,8 @@ cdef class Triangulation:
                 # print "Found the triangle"
                 return e
     
+    # Point location using the history graph. Much faster than the walking
+    # method
     def search(self, Vertex v):
         cdef Triangle current_triangle = self.history
 
@@ -216,11 +219,8 @@ cdef class Triangulation:
         cdef Edge currentSpoke = startingSpoke
         while True:
             currentSpoke = currentSpoke.dNext
-            # print currentSpoke
-            #print "Parent of spoke:", parent, e.triangle.__repr__()
             if currentSpoke.oNext.destination.leftOf(currentSpoke):
                 child = Triangle(currentSpoke)
-                #self.nextTriangleID += 1
                 created_triangles.append(child)
                 for parent in parents:
                     parent.children.append(child)
@@ -244,14 +244,11 @@ cdef class Triangulation:
                 
                 children = [Triangle(e),
                             Triangle(e.sym)]
-                #self.nextTriangleID += 2
                 created_triangles.extend(children)
                 for parent in parents:
-                    #print "Parent of swap: ", parent, e.triangle.__repr__()
                     parent.children.extend(children)
                     parent.anchor = None
                     
-                #self.addEdge(e)
                 e = e.oPrev
             elif e.oNext == startingSpoke:
                 break
@@ -336,11 +333,7 @@ cdef class Triangulation:
                 self.scan_triangle(triangle)
                 triangle.ID = self.heap.insert(triangle.candidate_error,
                                                (triangle.candidate, triangle))
-                #print v
-            #print h.dump()
     
         for triangle in deleted:
             if self.heap.contains(triangle.ID):
-                #print triangle.ID, h.qp[triangle.ID], h.pq[h.qp[triangle.ID]]
                 self.heap.delete(triangle.ID)
-                #print h.dump()

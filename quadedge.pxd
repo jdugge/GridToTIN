@@ -22,7 +22,6 @@ cdef class Vertex:
     cpdef leftOf(self, Edge e)
     cpdef rightOf(self, Edge e)
     cpdef onEdge(self, Edge e)
-    cpdef inTriangleSlow(self, Triangle tri)
 
 cdef class Triangle:
     cdef public int ID
@@ -38,10 +37,6 @@ cdef class Triangle:
     cpdef reshape(self)
     cpdef calculate_plane_equation(self)
     cpdef interpolate(self, int x, int y)
-    cpdef rasterize_triangle(self, np.ndarray[np.float_t, ndim=2] H)
-    cdef rasterize_flat(self, Vertex v0, Vertex v1, Vertex v2, 
-                        np.ndarray[np.float_t, ndim=2] H, include_last_row = ?,
-                        float max_error = ?)
 
 cpdef Edge splice(Edge a, Edge b)
 

@@ -1,6 +1,7 @@
 # Quadedge implementation based on Lischinski's code published in
 # Graphics Gems IV: https://github.com/erich666/GraphicsGems/tree/master/gemsiv/delaunay
 
+# Use real division everywhere
 from __future__ import division
 
 import numpy as np
@@ -9,8 +10,6 @@ from cpython cimport array as c_array
 from array import array
 import sys
 from numbers import Number
-
-# Use real division everywhere
 
 
 np.import_array()
@@ -162,9 +161,6 @@ cpdef makeTriangle(Vertex v0, Vertex v1, Vertex v2):
     return e0
 
 cdef class Vertex:
-    #cdef public long x, y
-    #cdef public float z
-    #cdef public Edge parent
 
     def __cinit__(self, long x, long y, float z = 0):
         self.x = x
@@ -207,36 +203,6 @@ cdef class Vertex:
             return False
         l = Line(e.origin, e.destination)
         return fabs(l.evaluate(self)) < eps
-    
-    cpdef inTriangleSlow(self, Triangle tri):
-        v0, v1, v2 = tri.vertices
-        
-        #s = 1.0 / (tri.area) * (v0.y * v2.x - v0.x * v2.y + (v2.y - v0.y) * self.x + (v0.x - v2.x) * self.y )
-        #if s < 0:
-        #    return False
-        #else:
-        #    t = 1.0 / (tri.area) * (v0.x * v1.y - v0.y * v1.x + (v0.y - v1.y) * self.x + (v1.x - v0.x) * self.y )
-        #    if t < 0:
-        #        return False
-        #    else:
-        #        return (s + t) < 1
-        va = v2 - v0
-        vb = v1 - v0
-        vc = self - v0
-        
-        d00 = va * va
-        d01 = va*vb
-        d02 = va*vc
-        d11 = vb*vb
-        d12 = vb*vc
-        
-        denom = float(d00 * d11 - d01 * d01)
-        u = (d11 * d02 - d01 * d12) / denom
-        if u >= 0:
-            v = (d00 * d12 - d01 * d02) / denom
-            return u + v <= 1
-        else:
-            return False
 
     property norm:
         def __get__(self): return sqrt(self.x ** 2 + self.y ** 2)
@@ -282,8 +248,6 @@ cdef class Triangle:
         self.children = []
         
         self.calculate_plane_equation()
-        
-        # print "Created triangle: ", self.__repr__(), self, "\n"
     
     cpdef reshape(self):
         self.anchor.triangle = self
@@ -304,200 +268,19 @@ cdef class Triangle:
     
     cpdef interpolate(self, int x, int y):
         return self.a * x + self.b * y + self.c
-    
-#    inline void Plane::init(const Vec3& p, const Vec3& q, const Vec3& r)
-#// find the plane z=ax+by+c passing through three points p,q,r
-#{
-#    // We explicitly declare these (rather than putting them in a
-#    // Vector) so that they can be allocated into registers.
-#    real ux = q[X]-p[X], uy = q[Y]-p[Y], uz = q[Z]-p[Z];
-#    real vx = r[X]-p[X], vy = r[Y]-p[Y], vz = r[Z]-p[Z];
-#    real den = ux*vy-uy*vx;
-#
-#    a = (uz*vy - uy*vz)/den;
-#    b = (ux*vz - uz*vx)/den;
-#    c = p[Z] - a*p[X] - b*p[Y];
-#}
-    
-    cpdef rasterize_triangle(self, np.ndarray[np.float_t, ndim=2] H):
-        cdef float max_error = 0
-        cdef int max_x, max_y
-        cdef Vertex v0, v1, v2
-        v0, v1, v2 = self.vertices
-        
-        if v0.y > v1.y:
-            v_tmp = v0
-            v0 = v1
-            v1 = v_tmp
-        if v0.y > v2.y:
-            v_tmp = v0
-            v0 = v2
-            v2 = v_tmp
-        if v1.y > v2.y:
-            v_tmp = v1
-            v1 = v2
-            v2 = v_tmp
-        if v1.y == v2.y:
-            x, y, max_error = self.rasterize_flat(v0, v1, v2, H)
-            #print "Triangle ", self, x, y, max_error
-        elif v0.y == v1.y:
-            x, y, max_error = self.rasterize_flat(v2, v0, v1, H)
-            #print "Triangle ", self, x, y, max_error
-        else:
-            v_tmp = Vertex((v0.x + float(v1.y - v0.y) / float(v2.y - v0.y) \
-                     * (v2.x - v0.x)), v1.y)
-            #print "Aux point: ", v_tmp
-            x, y, max_error = self.rasterize_flat(v0, v1, v_tmp, H)
-            #print "Found new candidate (top): ", x, y, max_error
-            x2, y2, max_error2 = self.rasterize_flat(v2, v1, v_tmp, H,
-                                                     max_error = max_error,
-                                                     include_last_row = False)
-            
-            #x = array('i', [-1] * (i1 + i2 + 1))
-            #y = array('i', [-1] * (i1 + i2 + 1))
-            #x[0  : i1     ] = x1
-            #x[i1 : i1 + i2] = x2
-            #x[i1 + i2]      = v_tmp.x
-            
-            #y[0  : i1     ] = y1
-            #y[i1 : i1 + i2] = y2
-            #y[i1 + i2]      = v_tmp.y
-            
-           # x = np.concatenate((x1, x2))
-            #y = np.concatenate((y1, y2))
-            if max_error2 > max_error:
-                x, y, max_error = x2, y2, max_error2
-                #print "Found new candidate (bottom): ", x, y, max_error
-            
-            x3 = round(v_tmp.x)
-            y3 = round(v_tmp.y)
-            error3 = abs(H[y3, x3] - self.interpolate(x3, y3))
-            
-            if error3 > max_error:
-                x, y, max_error = x3, y3, error3
-                #print "Found new candidate (aux): ", x, y, max_error 
-        
-        #print "Final: ", x, y, max_error, self
-        return Vertex(x, y, H[y, x]), max_error
+
   
     def __str__(self):
         return "{} -- {} -- {}".format(self.vertices[0],
                                        self.vertices[1],
                                        self.vertices[2])
-                                       
-    cdef rasterize_flat(self, Vertex v0, Vertex v1, Vertex v2,
-                        np.ndarray[np.float_t, ndim=2] H,
-                        include_last_row = True,
-                        float max_error = 0):
-        if v1.x > v2.x:
-            v1, v2 = v2, v1
-        
-        if v1.y > v0.y:
-            step_y = 1
-        else:
-            step_y = -1
-        
-        cdef int max_elements = (v1.y - v0.y + 1) * (v2.x - v1.x + 1) * step_y
-        
-        cdef float slope1 = float(v1.x - v0.x) / float(v1.y - v0.y) * step_y
-        cdef float slope2 = float(v2.x - v0.x) / float(v2.y - v0.y) * step_y
-        cdef float x_start = v0.x + slope1
-        cdef float x_stop = v0.x + slope2
-        
-        #cdef c_array.array x = array('i', [-1] * max_elements)
-        #cdef c_array.array y = array('i', [-1] * max_elements)
-        
-        cdef np.ndarray[DTYPE_t, ndim=1] x = np.zeros(max_elements, dtype=DTYPE)
-        cdef np.ndarray[DTYPE_t, ndim=1] y = np.zeros(max_elements, dtype=DTYPE)
-        cdef int i = 0    
-        
-        cdef int max_x = 0, max_y = 0
-        
-        for scanline_y in xrange(v0.y + step_y, v1.y, step_y):
-            for scanline_x in xrange(int(round(x_start)), int(round(x_stop)) + 1):
-                x[i] = scanline_x
-                y[i] = scanline_y
-                error = abs(H[scanline_y, scanline_x] - self.interpolate(scanline_x, scanline_y))
-                
-                if error > max_error:
-                    max_error = error
-                    max_x = scanline_x
-                    max_y = scanline_y
-                    #print "Found new candidate: ", max_x, max_y, max_error 
-                i += 1
-            #n = int(x_stop) - int(x_start) + 1
-            #x[i:i+n] = range(int(x_start), int(x_stop) + 1)
-            #i += n
-            x_start += slope1
-            x_stop += slope2
-        
-        if include_last_row:
-            scanline_y = v1.y
-           # print x_start, x_stop
-            for scanline_x in xrange(int(round(x_start)), int(round(x_stop))):
-                error = abs(H[scanline_y, scanline_x] - self.interpolate(scanline_x, scanline_y))
-                
-                if error > max_error:
-                    max_error = error
-                    max_x = scanline_x
-                    max_y = scanline_y
-                    #print "Found new candidate: ", max_x, max_y, max_error 
-                i += 1
-        
-        return max_x, max_y, max_error
-
-
-
+  
 
 cpdef triangleArea(Vertex v0, Vertex v1, Vertex v2):
     return (v1.x - v0.x) * (v2.y - v0.y) - (v1.y - v0.y) * (v2.x - v0.x);
 
 cpdef ccw(Vertex v0, Vertex v1, Vertex v2):
     return triangleArea(v0, v1, v2) > 0
-
-cpdef locate(Vertex v, Edge e):
-    while (True):
-        if (v == e.origin or v == e.destination):
-            return e
-        elif v.rightOf(e):
-            e = e.sym
-        elif not (v.rightOf(e.oNext)):
-            e = e.oNext
-        elif not (v.rightOf(e.dPrev)):
-            e = e.dPrev
-        else:
-            return e
-
-cpdef insertSite(Vertex v, Edge e):
-    cdef Edge base, t
-    
-    e = locate(v, e)
-    if v == e.origin or v == e.destination:
-        pass
-    elif v.onEdge(e):
-        e = e.oPrev
-        deleteEdge(e.oNext)
-    base = makeEdge(e.origin, v)
-    splice(base, e)
-    startingEdge = base
-
-    base = connect(e, base.sym)
-    e = base.oPrev
-    while e.lNext != startingEdge:
-        base = connect(e, base.sym)
-        e = base.oPrev
-
-    while True:
-        t = e.oPrev
-        if t.destination.rightOf(e) and v.inCircle(e.origin,
-                                                   t.destination,
-                                                   e.destination):
-            swap(e)
-            e = e.oPrev
-        elif e.oNext == startingEdge:
-            return
-        else:
-            e = e.oNext.lPrev
 
 cpdef list edgeRing(Edge e):
     coordList = []
