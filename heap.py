@@ -42,8 +42,8 @@ class Heap:
         return max
     
     def dump(self):
-        print zip([self.keys[self.pq[i]] for i in range(1, self.N+1)],
-                  [self.elements[self.pq[i]] for i in range(1, self.N+1)])
+        print(zip([self.keys[self.pq[i]] for i in range(1, self.N+1)],
+                  [self.elements[self.pq[i]] for i in range(1, self.N+1)]))
     
     def less(self, i, j):
         return self.keys[self.pq[i]] < self.keys[self.pq[j]]
