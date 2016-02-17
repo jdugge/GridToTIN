@@ -27,6 +27,23 @@ class TestQuadedge(unittest.TestCase):
         self.assertIs(e.r_next, e.sym)
         self.assertIs(e.r_prev, e.sym)
 
+    def test_splice(self):
+        q0 = qe.QuadEdge()
+        q1 = qe.QuadEdge()
+
+        e0 = q0.base
+        e1 = q1.base
+
+        self.assertIsNot(e0, e1)
+        self.assertIs(e0.o_next, e0)
+
+        qe.splice(e0, e1)
+
+        self.assertIs(e0.o_next, e1)
+        self.assertIs(e1.o_next, e0)
+
+        self.assertIs(e0.l_next, e0.sym)
+        self.assertIs(e0.l_prev, e1.sym)
 
 
 
