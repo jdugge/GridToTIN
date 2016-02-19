@@ -49,9 +49,9 @@ class Heap:
         return self.keys[self.pq[i]] < self.keys[self.pq[j]]
     
     def swim(self, k):
-        while (k > 1 and self.less(k/2, k)):
-            self.exchange(k, k/2)
-            k = k/2
+        while k > 1 and self.less(k//2, k):
+            self.exchange(k, k//2)
+            k = k//2
     
     def sink(self, k):
         while (2*k <= self.N):
