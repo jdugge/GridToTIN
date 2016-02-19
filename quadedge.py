@@ -2,7 +2,6 @@
 # Graphics Gems IV: https://github.com/erich666/GraphicsGems/tree/master/gemsiv/delaunay
 
 import numpy as np
-from array import array
 import sys
 from numbers import Number
 
@@ -266,9 +265,7 @@ class Triangle:
 
         self.a = (u.z * v.y - u.y * v.z) / den
         self.b = (u.x * v.z - u.z * v.x) / den
-        self.c = self.vertices[0].z - \
-                 self.a * self.vertices[0].x - \
-                 self.b * self.vertices[0].y
+        self.c = self.vertices[0].z - self.a * self.vertices[0].x - self.b * self.vertices[0].y
 
     def interpolate(self, x, y):
         return self.a * x + self.b * y + self.c
@@ -280,7 +277,7 @@ class Triangle:
 
 
 def triangle_area(v0, v1, v2):
-    return (v1.x - v0.x) * (v2.y - v0.y) - (v1.y - v0.y) * (v2.x - v0.x);
+    return (v1.x - v0.x) * (v2.y - v0.y) - (v1.y - v0.y) * (v2.x - v0.x)
 
 
 def ccw(v0, v1, v2):
