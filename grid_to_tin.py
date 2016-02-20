@@ -12,7 +12,6 @@ import quadedge as qe
 import rasterio
 
 
-
 def write_ply(filename, coordinates, triangles, binary=True):
     template = "ply\n"
     if binary:
@@ -34,7 +33,7 @@ end_header
     }
 
     if binary:
-        with  open(filename,'wb') as outfile:
+        with open(filename,'wb') as outfile:
             outfile.write(template.format(**context))
             coordinates = np.array(coordinates, dtype="float32")
             coordinates.tofile(outfile)
@@ -44,7 +43,7 @@ end_header
             triangles = np.array(triangles, dtype="int32")
             triangles.tofile(outfile)
     else:
-        with  open(filename,'w') as outfile:
+        with open(filename,'w') as outfile:
             outfile.write(template.format(**context))
             np.savetxt(outfile, coordinates, fmt="%.3f")
             np.savetxt(outfile, triangles, fmt="3 %i %i %i")
@@ -55,8 +54,8 @@ def write_obj(filename, coordinates, triangles, binary=False):
     texture_coordinates /= texture_coordinates.ptp(axis=0)
 
     template = """mtllib material.mtl\n
-    usemtl material0\n
-    \n"""
+usemtl material0\n
+\n"""
     if binary:
         template += "format binary_" + sys.byteorder + "_endian 1.0\n"
     else:
@@ -67,10 +66,10 @@ def write_obj(filename, coordinates, triangles, binary=False):
     context = {}
 
     if binary:
-        with  open(filename,'wb') as outfile:
+        with open(filename, 'wb') as outfile:
             outfile.write(template.format(**context))
             coordinates = np.array(coordinates, dtype="float32")
-            coordinates[:,2] = coordinates[:,2] * 100
+            coordinates[:, 2] = coordinates[:,2] * 100
             coordinates.tofile(outfile)
 
             triangles = np.hstack((np.ones([len(triangles),1], dtype="int") * 3,
@@ -78,8 +77,8 @@ def write_obj(filename, coordinates, triangles, binary=False):
             triangles = np.array(triangles, dtype="int32")
             triangles.tofile(outfile)
     else:
-        with  open(filename,'w') as outfile:
-            outfile.write(template.format(**context))
+        with open(filename, 'wb') as outfile:
+            outfile.write(bytes(template.format(**context), 'UTF-8'))
             np.savetxt(outfile, coordinates, fmt="v %.3f %.3f %.3f")
             np.savetxt(outfile, texture_coordinates, fmt="vt %.3f %.3f")
             np.savetxt(outfile,
@@ -97,13 +96,12 @@ def main(argv):
         affine = file.affine
 
     t = tri.Triangulation(raster)
-    for i in range(nvertices): t.insert_next()
+    for i in range(nvertices):
+        t.insert_next()
 
-    vertices = np.array([ affine * v.pos[:2] + tuple([v.pos[2] * z_scale]) for v in t.vertices])
+    vertices = np.array([affine * v.pos[:2] + tuple([v.pos[2] * z_scale]) for v in t.vertices])
     triangles = [[ t.vertices.index(vertex) for vertex in triangle.vertices][::-1]
                 for triangle in t.triangles ]
-
-
 
     write_obj(outputfile, vertices, triangles, binary=False)
 

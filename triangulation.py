@@ -45,24 +45,18 @@ class Triangulation:
         rangeX = maxX - minX
         rangeY = maxY - minY
 
-        #self.va = Vertex(minX - 1, minY - 1)
-        #self.vb = Vertex(minX + 3 * rangeX + 1, minY - 1)
-        #self.vc = Vertex(minX - 1, minY + 2 * rangeY + 1)
-        #self.base = makeTriangle(self.va, self.vb, self.vc)
-        #self.auxVertices = [self.va, self.vb, self.vc]
-
-        self.vertexDict = dict()
-        self.edgeDict = dict()
+        self.vertex_dict = dict()
+        self.edge_dict = dict()
 
         v0 = Vertex(minX, minY, self.Hmap[0,   0])
         v1 = Vertex(maxX, minY, self.Hmap[0,  -1])
         v2 = Vertex(maxX, maxY, self.Hmap[-1, -1])
         v3 = Vertex(minX, maxY, self.Hmap[-1,  0])
 
-        self.vertexDict[0] = v0
-        self.vertexDict[1] = v1
-        self.vertexDict[2] = v2
-        self.vertexDict[3] = v3
+        self.vertex_dict[0] = v0
+        self.vertex_dict[1] = v1
+        self.vertex_dict[2] = v2
+        self.vertex_dict[3] = v3
         self.nextVertexid = 4
 
         self.next_edge_id = 0
@@ -96,28 +90,25 @@ class Triangulation:
             self.scan_triangle(triangle)
             print(triangle.candidate_error, triangle.candidate)
             triangle.id = self.heap.insert(triangle.candidate_error,
-                                           (triangle.candidate, triangle) )
-        #self.nextTriangleid = 2
+                                           (triangle.candidate, triangle))
 
     @property
-    def vertices(self): return [self.vertexDict[key]
-            for key in self.vertexDict]
+    def vertices(self): return [self.vertex_dict[key]
+                                for key in self.vertex_dict]
 
     @property
-    def edges(self): return [self.edgeDict[key]
-            for key in self.edgeDict]
+    def edges(self): return [self.edge_dict[key]
+                             for key in self.edge_dict]
 
     @property
     def triangles(self):
             return list(filter(lambda x: x.id != -1, self.triangle_list))
 
-    @property
-    def triangle_patches(self):
+    def triangle_patches(self, **kwargs):
             return PatchCollection([
-                Polygon([
-                    v.pos[:2] for v in t.vertices
-                ]) for t in self.triangles
-            ])
+                Polygon([v.pos[:2] for v in t.vertices])
+                for t in self.triangles
+            ], **kwargs)
 
     @property
     def edge_lines(self):
@@ -127,8 +118,8 @@ class Triangulation:
     # kept because it's pretty to look at
     def locate(self, v):
         e = self.base
-        while (True):
-            if (v == e.origin or v == e.destination or v.on_edge(e)):
+        while True:
+            if v == e.origin or v == e.destination or v.on_edge(e):
                 # print "Start or end of edge"
                 if not e.o_next.destination.left_of(e):
                     # The mesh is on the right-hand side of the edge, flip it
@@ -155,8 +146,8 @@ class Triangulation:
         while len(current_triangle.children) > 0:
             for triangle in current_triangle.children:
                 if v.in_triangle(triangle.vertices[0],
-                                    triangle.vertices[1],
-                                    triangle.vertices[2]):
+                                 triangle.vertices[1],
+                                 triangle.vertices[2]):
                     current_triangle = triangle
                     break
             if not current_triangle == triangle:
@@ -166,19 +157,20 @@ class Triangulation:
         return current_triangle.anchor
 
     def add_edge(self, e):
-        self.edgeDict[self.next_edge_id] = e
+        self.edge_dict[self.next_edge_id] = e
         e.id = e.sym.id = self.next_edge_id
         self.next_edge_id += 1
 
     def delete_edge(self, e):
         splice(e, e.o_prev)
         splice(e.sym, e.sym.o_prev)
-        del self.edgeDict[e.id]
+        del self.edge_dict[e.id]
         del e
 
-    def insertSite(self, v, e = None):
+    def insert_site(self, v, e=None):
         deleted_triangles = []
         created_triangles = []
+        boundary_edge = None
 
         if e is None:
             e = self.search(v)
@@ -191,7 +183,6 @@ class Triangulation:
         if v == e.origin or v == e.destination:
             return deleted_triangles, created_triangles
         elif v.on_edge(e):
-            print("On edge")
             if not e.o_prev.destination.right_of(e):
                 parents = [e.triangle]
                 boundary_edge = e
@@ -203,7 +194,7 @@ class Triangulation:
             parents = [e.triangle]
 
         # Add point to triangulation
-        self.vertexDict[self.nextVertexid] = v
+        self.vertex_dict[self.nextVertexid] = v
         self.nextVertexid += 1
 
         # Create first spoke from origin of base to new site
@@ -211,15 +202,14 @@ class Triangulation:
         self.add_edge(spoke)
 
         splice(spoke, e)
-        startingSpoke = spoke
+        starting_spoke = spoke
 
         # Create second spoke from destination of base to new site
         spoke = connect(e, spoke.sym)
         self.add_edge(spoke)
 
-        boundary_edge = None
         e = spoke.o_prev
-        while e.l_next != startingSpoke:
+        while e.l_next != starting_spoke:
             spoke = connect(e, spoke.sym)
             self.add_edge(spoke)
             e = spoke.o_prev
@@ -232,28 +222,27 @@ class Triangulation:
 
         # Create (potentially ephemeral) triangles for all the spokes and assign
         # them as children to the parent triangles
-        currentSpoke = startingSpoke
+        current_spoke = starting_spoke
         while True:
-            currentSpoke = currentSpoke.d_next
-            if currentSpoke.o_next.destination.left_of(currentSpoke):
-                child = Triangle(currentSpoke)
+            current_spoke = current_spoke.d_next
+            if current_spoke.o_next.destination.left_of(current_spoke):
+                child = Triangle(current_spoke)
                 created_triangles.append(child)
                 for parent in parents:
                     parent.children.append(child)
 
-            if currentSpoke == startingSpoke:
+            if current_spoke == starting_spoke:
                 break
 
         for parent in parents:
             parent.anchor = None
         deleted_triangles.extend(parents)
 
-
         while True:
             t = e.o_prev
             if t.destination.right_of(e) and v.in_circle(e.origin,
-                                                       t.destination,
-                                                       e.destination):
+                                                         t.destination,
+                                                         e.destination):
                 parents = [e.triangle, e.sym.triangle]
                 swap(e)
                 deleted_triangles.extend(parents)
@@ -266,19 +255,19 @@ class Triangulation:
                     parent.anchor = None
 
                 e = e.o_prev
-            elif e.o_next == startingSpoke:
+            elif e.o_next == starting_spoke:
                 break
             else:
                 e = e.o_next.l_prev
 
-        created_triangles = list(set(created_triangles) \
-                                 - set(deleted_triangles))
+        created_triangles = list(set(created_triangles) -
+                                 set(deleted_triangles))
 
         return created_triangles, deleted_triangles
 
     def find_nearest_boundary_edge(self, vertex):
         # Let's find a boundary edge
-        start_edge = self.search(Vertex(0,0))
+        start_edge = self.search(Vertex(0, 0))
         edge = start_edge.o_next
         while not edge == start_edge:
             if edge.is_boundary:
@@ -292,8 +281,8 @@ class Triangulation:
                     break
                 edge = edge.o_next
 
-        while (not 0 < ((vertex - edge.origin) * \
-                (edge.destination - edge.origin)) / edge.length**2 < 1) \
+        while (not 0 < ((vertex - edge.origin) *
+               (edge.destination - edge.origin)) / edge.length**2 < 1) \
                 or not vertex.left_of(edge):
             edge = edge.lNext
 
@@ -357,7 +346,7 @@ class Triangulation:
                 t.candidate.pos = (x, y, z_map)
 
     def insert_point(self, v):
-        new, deleted = self.insertSite(v)
+        new, deleted = self.insert_site(v)
 
         for triangle in deleted:
             triangle.id = -1
@@ -375,7 +364,7 @@ class Triangulation:
         error, (candidate, triangle) = self.heap.pop()
         triangle.id = -1 # Mark it as removed from the heap
 
-        new, deleted = self.insertSite(candidate)
+        new, deleted = self.insert_site(candidate)
 
         for triangle in deleted:
             if not triangle.id == -1:
