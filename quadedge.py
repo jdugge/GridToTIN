@@ -237,10 +237,10 @@ class Vertex:
 
 
 class Triangle:
-    def __init__(self, e, anchor=True, id=-1):
+    def __init__(self, e, anchor=True, id_=-1):
         self.vertices = [e.origin, e.destination, e.l_prev.origin]
         self.area = triangle_area(*self.vertices)
-        self.id = id
+        self.id = id_
         self.candidate = Vertex(-1, -1, 0)
         self.candidate_error = float_min
         self.a = self.b = self.c = None
@@ -269,6 +269,70 @@ class Triangle:
 
     def interpolate(self, x, y):
         return self.a * x + self.b * y + self.c
+    
+    def find_circumcenter(self,  triangulation, within_triangulation=False):
+            v0 = self.anchor.destination - self.anchor.origin
+            v1 = self.anchor.l_next.destination - self.anchor.origin
+            
+            D = 2 * (v0.x * v1.y - v0.y * v1.x)
+            c_x = ( v1.y * (v0.x**2 + v0.y**2) - v0.y * (v1.x**2 + v1.y**2) ) / D
+            c_y = ( v0.x * (v1.x**2 + v1.y**2) - v1.x * (v0.x**2 + v0.y**2) ) / D
+            
+            circumcenter = Vertex(c_x, c_y) + self.anchor.origin
+            
+            if within_triangulation:
+                boundary_edge = None
+                if circumcenter.x > triangulation.maxX:
+                    circumcenter.x = triangulation.maxX
+                    boundary_edge = triangulation.locate(circumcenter)
+                elif circumcenter.x < triangulation.minX:
+                    circumcenter.x = triangulation.minX
+                    boundary_edge = triangulation.locate(circumcenter)
+                elif circumcenter.y > triangulation.maxY:
+                    circumcenter.y = triangulation.maxY
+                    boundary_edge = triangulation.locate(circumcenter)
+                elif circumcenter.y < triangulation.minY:
+                    circumcenter.y = triangulation.minY
+                    boundary_edge = triangulation.locate(circumcenter)
+                
+                if boundary_edge is not None:
+                    circumcenter = (boundary_edge.origin +
+                                    boundary_edge.destination) / 2
+                
+            return circumcenter
+
+    @property
+    def coordinate_list(self):
+        return [v.pos for v in self.vertices]
+
+    @property
+    def coordinate_list_2d(self):
+        return [v.pos[:2] for v in self.vertices]
+
+    @property
+    def edge_lengths(self):
+        l0 = (self.vertices[0] - self.vertices[1]).norm
+        l1 = (self.vertices[1] - self.vertices[2]).norm
+        l2 = (self.vertices[2] - self.vertices[0]).norm
+        l = [l0, l1, l2]
+        l.sort()
+
+        return l
+
+    @property
+    def aspect_ratio(self):
+        l0, l1, l2 = self.edge_lengths
+        return l2 * (l0 + l1 + l2) / self.area
+
+    @property
+    def circumradius(self):
+        l0, l1, l2 = self.edge_lengths
+        return l0 * l1 * l2 / (2 * self.area)
+
+    @property
+    def radius_edge_ratio(self):
+        l0, l1, l2 = self.edge_lengths
+        return self.circumradius / l0
 
     def __str__(self):
         return "{} -- {} -- {}".format(self.vertices[0],

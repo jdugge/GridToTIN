@@ -81,7 +81,7 @@ class Triangulation:
 
         self.base = q0
 
-        self.history = Triangle(self.base, anchor = False, id = -1)
+        self.history = Triangle(self.base, anchor = False, id_= -1)
         self.history.children = [Triangle(q4),
                                  Triangle(q4.sym)]
 
@@ -131,9 +131,9 @@ class Triangulation:
             elif not (v.right_of(e.o_next)):
                 # print "Left of o_next, move to o_next"
                 e = e.o_next
-            elif not (v.right_of(e.dPrev)):
+            elif not (v.right_of(e.d_prev)):
                 # print "Left of dPrev, move to dPrev"
-                e = e.dPrev
+                e = e.d_prev
             else:
                 # print "Found the triangle"
                 return e
