@@ -11,6 +11,8 @@ import rasterio
 from matplotlib.patches import Polygon
 from matplotlib.lines import Line2D
 from matplotlib.collections import PatchCollection
+import logging
+logging.basicConfig(level=logging.DEBUG)
 
 
 class Triangulation:
@@ -88,7 +90,6 @@ class Triangulation:
         for triangle in self.history.children:
             self.triangle_list.append(triangle)
             self.scan_triangle(triangle)
-            print(triangle.candidate_error, triangle.candidate)
             triangle.id = self.heap.insert(triangle.candidate_error,
                                            (triangle.candidate, triangle))
 
@@ -417,6 +418,29 @@ class Triangulation:
         if new_v.right_of(e):
             e = e.sym
         self.insert_point(new_v, e)
+
+    def split_all_encroached_edges(self):
+        """
+        For all boundary edges, check if they are encroached. Split the longest
+        encroached boundary edge and repeat until no more boundary edges are
+        encroached
+        """
+        while True:
+            max_length = 0
+            worst_edge = None
+            for e in self.undirected_edges:
+                if e.is_boundary or e.sym.is_boundary:
+                    if e.o_next.destination.encroaches(e) or \
+                       e.o_prev.destination.encroaches(e):
+                        if e.length > max_length:
+                            max_length = e.length
+                            worst_edge = e
+            if worst_edge is None:
+                logging.debug("No more encroached edges")
+                break
+            else:
+                logging.debug("Splitting edge {}".format(worst_edge))
+                self.split_edge(worst_edge)
 
     def calculate_error_map(self):
         error_map = self.Hmap.copy()
