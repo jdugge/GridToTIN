@@ -14,13 +14,26 @@ float_min = -sys.float_info.max
 
 class Edge:
     def __init__(self, origin=None):
-        self.origin = origin
+        self.origin_ = origin
+        if origin is not None:
+            # Add a reference from the origin vertex to this edge, so if we need
+            # an edge that contains a certain vertex, we can simply use this
+            # reference
+            origin.edge = self
         self.rot = self
         self.next = self
 
     def __str__(self):
         return "(" + str(self.origin.x) + "," + str(self.origin.y) + \
             ") -- (" + str(self.destination.x) + "," + str(self.destination.y) + ")"
+
+    @property
+    def origin(self): return self.origin_
+
+    @origin.setter
+    def origin(self, origin):
+        self.origin_ = origin
+        origin.edge = self
 
     @property
     def destination(self): return self.sym.origin
@@ -153,6 +166,7 @@ class Vertex:
         self.x = x
         self.y = y
         self.z = z
+        self.edge = None
 
     @property
     def pos(self): return self.x, self.y, self.z
@@ -162,6 +176,9 @@ class Vertex:
         self.x = pos[0]
         self.y = pos[1]
         self.z = pos[2]
+
+    def __str__(self):
+        return "({},{},{})".format(*self.pos)
 
     def in_triangle(self, v0, v1, v2):
         return triangle_area(v0, v1, self) >= 0 and \
@@ -232,9 +249,28 @@ class Vertex:
         else:
             return NotImplemented
 
-    def __str__(self):
-        return "({},{},{})".format(*self.pos)
+    def encroaches(self, e):
+        """
+        Checks if the vertex encroaches a given edge, that is it lies within
+        the diametral circle of the edge and is
+        :param e:
+        :return: True if the vertex encroaches e, False otherwise
+        """
+        if self is e.origin or self is e.destination:
+            return False
+        else:
+            a = e.origin - self
+            b = e.destination - self
+            return a * b <= 0
 
+    @property
+    def star(self):
+        start = e = self.edge
+        edges = [start]
+        while e.o_next is not start:
+            e = e.o_next
+            edges.append(e)
+        return edges
 
 class Triangle:
     def __init__(self, e, anchor=True, id_=-1):
@@ -333,6 +369,10 @@ class Triangle:
     def radius_edge_ratio(self):
         l0, l1, l2 = self.edge_lengths
         return self.circumradius / l0
+
+    @property
+    def edges(self):
+        return [self.anchor, self.anchor.l_next, self.anchor.l_prev]
 
     def __str__(self):
         return "{} -- {} -- {}".format(self.vertices[0],

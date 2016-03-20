@@ -101,6 +101,15 @@ class Triangulation:
                              for key in self.edge_dict]
 
     @property
+    def undirected_edges(self):
+        edges = set()
+        for triangle in self.triangles:
+            for edge in triangle.edges:
+                if edge not in edges and edge.sym not in edges:
+                    edges.add(edge)
+        return edges
+
+    @property
     def triangles(self):
             return list(filter(lambda x: x.id != -1, self.triangle_list))
 
@@ -132,7 +141,7 @@ class Triangulation:
                 # print "Left of o_next, move to o_next"
                 e = e.o_next
             elif not (v.right_of(e.d_prev)):
-                # print "Left of dPrev, move to dPrev"
+                # print "Left of d_prev, move to d_prev"
                 e = e.d_prev
             else:
                 # print "Found the triangle"
@@ -168,15 +177,27 @@ class Triangulation:
         del e
 
     def insert_site(self, v, e=None):
+        """
+        Insert a new site in the 2D triangulation, maintaining the Delaunay
+        criterion
+        :param v: Vertex to be inserted into the triangulation
+        :param e: Optional: edge of the triangle that contains v, to speed up
+        the process
+        :return:
+        """
         deleted_triangles = []
         created_triangles = []
         boundary_edge = None
+
+        # Get elevation from map if none was provided in vertex
+        if v.z == 0:
+            v.z = self.Hmap[v.y, v.x]
 
         if e is None:
             e = self.search(v)
         else:
             assert (not v.right_of(e) and
-                    not v.right_of(e.lNext) and
+                    not v.right_of(e.l_next) and
                     not v.right_of(e.l_prev) ), \
                     'Edge %s is not an edge of the ' \
                     'triangle containing edge %s' % (e, v)
@@ -243,6 +264,8 @@ class Triangulation:
             if t.destination.right_of(e) and v.in_circle(e.origin,
                                                          t.destination,
                                                          e.destination):
+                # Delaunay criterion is violated, swap an edge to fix it
+                # This deletes two triangles and creates two new ones
                 parents = [e.triangle, e.sym.triangle]
                 swap(e)
                 deleted_triangles.extend(parents)
@@ -266,7 +289,6 @@ class Triangulation:
         return created_triangles, deleted_triangles
 
     def find_nearest_boundary_edge(self, vertex):
-        # Let's find a boundary edge
         start_edge = self.search(Vertex(0, 0))
         edge = start_edge.o_next
         while not edge == start_edge:
@@ -284,9 +306,9 @@ class Triangulation:
         while (not 0 < ((vertex - edge.origin) *
                (edge.destination - edge.origin)) / edge.length**2 < 1) \
                 or not vertex.left_of(edge):
-            edge = edge.lNext
+            edge = edge.l_next
 
-    def scan_triangle(self, t):
+    def scan_triangle(self, t, interpolation_map=None):
         v0, v1, v2 = t.vertices
 
         # Sort vertices in ascending order
@@ -296,7 +318,6 @@ class Triangulation:
             v0, v2 = v2, v0
         if v1.y > v2.y:
             v1, v2 = v2, v1
-
 
         # Check if base of triangle is flat
         if v1.y == v0.y:
@@ -313,7 +334,7 @@ class Triangulation:
 
         # If the base of the triangle is flat, this loop won't be executed
         for y in range(y_start, y_end):
-            self.scan_triangle_line(t, y, x_a, x_b)
+            self.scan_triangle_line(t, y, x_a, x_b, interpolation_map)
             x_a += dx0
             x_b += dx1
 
@@ -330,34 +351,45 @@ class Triangulation:
 
         # If the top of the triangle is flat, this loop will be executed once
         for y in range(y_start, y_end + 1):
-            self.scan_triangle_line(t, y, x_a, x_b)
+            self.scan_triangle_line(t, y, x_a, x_b, interpolation_map)
             x_a += dx0
             x_b += dx1
 
-    def scan_triangle_line(self, t, y, x_a, x_b):
+    def scan_triangle_line(self, t, y, x_a, x_b, interpolation_map=None):
         x_start = int(ceil(min(x_a, x_b)))
         x_end   = int(floor(max(x_a, x_b)))
 
         for x in range(x_start, x_end + 1):
             z_map = self.Hmap[y, x]
             error = abs(z_map - t.interpolate(x, y))
+            if interpolation_map is not None:
+                interpolation_map[y,x] = t.interpolate(x,y)
             if error > t.candidate_error:
                 t.candidate_error = error
                 t.candidate.pos = (x, y, z_map)
 
-    def insert_point(self, v):
-        new, deleted = self.insert_site(v)
+    def insert_point(self, v, e=None):
+        """
+        Insert a new vertex into the triangulation and scan the newly created
+        triangles for the error
+        :param v: Vertex to be inserted
+        :param e: Optional edge for starting the triangle search
+        :return:
+        """
+        new, deleted = self.insert_site(v, e)
 
         for triangle in deleted:
-            triangle.id = -1
+            if not triangle.id == -1:
+                self.heap.delete(triangle.id)
+                triangle.id = -1
 
         for triangle in new:
             triangle.id = -2
 
-        #for triangle in new:
-         #       self.scan_triangle(triangle)
-                #triangle.id = self.heap.insert(triangle.candidate_error,
-                #                               (triangle.candidate, triangle))
+        for triangle in new:
+            self.scan_triangle(triangle)
+            triangle.id = self.heap.insert(triangle.candidate_error,
+                                           (triangle.candidate, triangle))
         self.triangle_list.extend(new)
 
     def insert_next(self):
@@ -376,3 +408,19 @@ class Triangulation:
                 triangle.id = self.heap.insert(triangle.candidate_error,
                                                (triangle.candidate, triangle))
         self.triangle_list.extend(new)
+
+    def split_edge(self, e):
+        new_v = e.origin + (e.destination - e.origin) * 0.5
+        new_v.x = int(new_v.x)
+        new_v.y = int(new_v.y)
+        new_v.z = 0
+        if new_v.right_of(e):
+            e = e.sym
+        self.insert_point(new_v, e)
+
+    def calculate_error_map(self):
+        error_map = self.Hmap.copy()
+        for triangle in self.triangles:
+            self.scan_triangle(triangle, error_map)
+        return error_map
+
