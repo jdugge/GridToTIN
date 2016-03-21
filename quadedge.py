@@ -82,6 +82,9 @@ class Edge:
 
     def as_line_segment(self):
         return [self.origin.pos, self.destination.pos]
+
+    def __lt__(self, other):
+        self.length < other.length
     
 
 class QuadEdge:
@@ -336,6 +339,49 @@ class Triangle:
                                     boundary_edge.destination) / 2
                 
             return circumcenter
+
+    def offcenter(self, b=math.sqrt(2)):
+        """
+        Find the off-center of the triangle, using the definition given in
+        Üngör, Alper. "Off-centers: A new type of Steiner points for computing
+        size-optimal quality-guaranteed Delaunay triangulations."
+        Computational Geometry 42.2 (2009): 109-118.
+        :param b: Minimum radius-edge ratio. Defaults to sqrt(2), as suggested
+                  in Üngör's paper
+        :return: A vertex at the 2D position of the off-center
+        """
+        # Get the shortest edge
+        e = min(self.edges)
+
+        # Assign some shorter names
+        vo = e.origin
+        vd = e.destination
+        va = e.o_next.destination
+
+        # Subtract e.origin
+        do = vd - vo
+        ao = va - vo
+
+        # Project b onto the perpendicular bisector of e using Pythagoras
+        b_proj = math.sqrt(b**2 - 0.25)
+
+        # The off-center
+        dx_offcenter = 0.5 * do.x - b_proj * do.y
+        dy_offcenter = 0.5 * do.y + b_proj * do.x
+
+        # The circumcenter
+        denominator = 0.5 / (do.x * ao.y - ao.x * do.y)
+        dx_circumcenter = (ao.y * do.norm**2 - do.y * ao.norm**2) * denominator
+        dy_circumcenter = (do.x * ao.norm**2 - ao.x * do.norm**2) * denominator
+
+        # Choose the center that is closer to e.origin
+        if dx_offcenter**2 + dy_offcenter**2 < \
+           dx_circumcenter**2 + dy_circumcenter**2:
+            dx, dy = dx_offcenter, dy_offcenter
+        else:
+            dx, dy = dx_circumcenter, dy_circumcenter
+
+        return Vertex(vo.x + dx, vo.y + dy)
 
     @property
     def coordinate_list(self):
