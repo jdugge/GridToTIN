@@ -78,7 +78,7 @@ class Edge:
     
     @property
     def is_boundary(self):
-        return self.o_prev.destination.left_of(self)
+        return not self.o_prev.destination.right_of(self)
 
     def as_line_segment(self):
         return [self.origin.pos, self.destination.pos]

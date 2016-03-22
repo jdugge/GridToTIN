@@ -394,6 +394,11 @@ class Triangulation:
         self.triangle_list.extend(new)
 
     def insert_next(self):
+        """
+        Pop the candidate with the greatest error and insert it into the
+        triangulation
+        :return:
+        """
         error, (candidate, triangle) = self.heap.pop()
         triangle.id = -1 # Mark it as removed from the heap
 
@@ -411,6 +416,11 @@ class Triangulation:
         self.triangle_list.extend(new)
 
     def split_edge(self, e):
+        """
+        Insert a new vertex at the mid-point of the given edge
+        :param e: The edge to split
+        :return:
+        """
         new_v = e.origin + (e.destination - e.origin) * 0.5
         new_v.x = int(new_v.x)
         new_v.y = int(new_v.y)
@@ -442,9 +452,101 @@ class Triangulation:
                 logging.debug("Splitting edge {}".format(worst_edge))
                 self.split_edge(worst_edge)
 
-    def calculate_error_map(self):
-        error_map = self.Hmap.copy()
+    def interpolated_map(self):
+        """
+        The height map resulting from linear interpolation of the triangle
+        mesh
+        :return:
+        """
+        interpolated_map = self.Hmap.copy()
         for triangle in self.triangles:
-            self.scan_triangle(triangle, error_map)
+            self.scan_triangle(triangle, interpolated_map)
+        return interpolated_map
+
+    def error_map(self):
+        """
+        The difference map between the original height map and the interpolated
+        height map
+        :return:
+        """
+        error_map = self.Hmap.copy() - self.interpolated_map()
         return error_map
 
+    def bad_triangles(self, b=2**0.5, ):
+        """
+        Find all triangles with a circumradius-to-shortest-edge ratio smaller
+        than b
+        :param b: Threshold, sqrt(2) by default
+        :return: A list of all bad triangles, or None if no bad triangles exist
+        """
+        bad_triangles = [triangle for triangle in self.triangles
+                          if (triangle.radius_edge_ratio > b)]
+        if len(bad_triangles) == 0:
+            return None
+        else:
+            bad_triangles.sort(key=lambda x: x.radius_edge_ratio)
+            return bad_triangles
+
+    def fix_worst_triangle(self, worst_triangle=None):
+        """
+        Find the worst triangle (in terms of circumradius-to-shortest-edge
+        ratio) and try to insert its off-center. If the off-center would
+        encroach a boundary edge, split that edge instead of inserting the
+        off-center
+        :param worst_triangle: Optionally provide the triangle that should be
+                               split instead of finding the worst triangle
+        :return:
+        """
+        if worst_triangle is None:
+            bad_triangles = self.bad_triangles()
+            if len(bad_triangles) == 0:
+                logging.debug("No bad triangle found")
+                return None
+            else:
+                worst_triangle = bad_triangles[0]
+
+        logging.debug("Fixing bad triangle {}".format(worst_triangle))
+        oc = worst_triangle.offcenter()
+        oc.x = int(oc.x)
+        oc.y = int(oc.y)
+
+        logging.debug("Trying to insert off-center {}".format(oc))
+        encroachment = False
+        for e in self.boundary_edges():
+            if oc.encroaches(e):
+                encroachment = True
+                logging.debug("Off-center would encroach {}".format(e) +
+                              ", splitting edge instead")
+                self.split_edge(e)
+
+        if not encroachment:
+            logging.debug("Inserting off-center")
+            self.insert_point(oc)
+
+    def fix_all_bad_triangles(self):
+        """
+        While there are still bad triangles, insert Steiner points and split
+        encroached edges
+        """
+        bad_triangles = self.bad_triangles()
+        while bad_triangles is not None:
+            worst_triangle = bad_triangles[0]
+            self.fix_worst_triangle(worst_triangle)
+            self.split_all_encroached_edges()
+            bad_triangles = self.bad_triangles()
+        logging.debug("No bad triangles")
+
+    def boundary_edges(self):
+        """
+        :return: List of all edges on the domain boundary
+        """
+        edges = list(self.undirected_edges)
+        boundary_edges = []
+
+        for e in edges:
+            if e.is_boundary:
+                boundary_edges.append(e)
+            elif e.sym.is_boundary:
+                boundary_edges.append(e.sym)
+
+        return boundary_edges
