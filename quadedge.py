@@ -83,6 +83,35 @@ class Edge:
     def as_line_segment(self):
         return [self.origin.pos, self.destination.pos]
 
+    def selection_segment(self, v):
+        """
+        When the edge is encroached by a vertex v, there is a segment of the
+        edge along which the edge can be split to solve the encroachment, the
+        "selection segment".
+        :param v: Encroaching vertex
+        :return: The start and end vertices of the selection segment
+        """
+        a = self.origin
+        b = self.destination
+
+        # Find the start of the selection segment
+        av = v - a
+        ab = b - a
+
+        p = min(av.norm**2/(av * ab), 1)
+        p = p if p >= 0 else 1
+        s0 = a + p * ab
+
+        # Find the end of the selection segment
+        bv = v - b
+        ba = a - b
+
+        q = bv.norm**2/(bv * ba)
+        q = q if q >= 0 else 1
+        s1 = b + q * ba
+
+        return s0, s1
+
     def __lt__(self, other):
         self.length < other.length
     
@@ -230,6 +259,12 @@ class Vertex:
         if isinstance(other, Vertex):
             return self.x * other.x + self.y * other.y
         elif isinstance(other, Number):
+            return Vertex(self.x * other, self.y * other, self.z * other)
+        else:
+            return NotImplemented
+
+    def __rmul__(self, other):
+        if isinstance(other, Number):
             return Vertex(self.x * other, self.y * other, self.z * other)
         else:
             return NotImplemented

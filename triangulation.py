@@ -369,6 +369,37 @@ class Triangulation:
                 t.candidate_error = error
                 t.candidate.pos = (x, y, z_map)
 
+    def scan_segment(self, e, s0, s1):
+        """
+        Find the point along the selection segment of an edge that has the worst
+        discretisation error
+        :param e: edge containing the segment
+        :param s0: starting vertex of selection segment
+        :param s1: ending vertex of selection segment
+        :return: vertex at the 2D position with the worst discretisation error
+        """
+
+        a = s1 - s0
+        d = ceil(a.norm)
+
+        step = 1 / d
+
+        max_error = 0
+        worst_vertex = None
+
+        for i in range(d):
+            v = s0 + i * step * a
+            x = round(v.x)
+            y = round(v.y)
+
+            z_map = self.Hmap[y, x]
+            interpolation = e.triangle.interpolate(x, y)
+            error = abs(interpolation - z_map)
+            if error > max_error:
+                max_error = error
+                worst_vertex = Vertex(x, y)
+        return worst_vertex
+
     def insert_point(self, v, e=None):
         """
         Insert a new vertex into the triangulation and scan the newly created
@@ -429,6 +460,36 @@ class Triangulation:
             e = e.sym
         self.insert_point(new_v, e)
 
+    def worst_encroached_edge(self):
+        """
+        :return: The longest encroached edge and the encroaching vertex
+        """
+        while True:
+            max_length = 0
+            worst_edge = None
+            encroaching_vertex = None
+            for e in self.undirected_edges:
+                encroaching_vertex_candidate = None
+                if e.is_boundary or e.sym.is_boundary:
+                    p = e.o_next.destination
+                    q = e.o_prev.destination
+                    if p.encroaches(e):
+                        encroaching_vertex_candidate = p
+                    elif q.encroaches(e):
+                        encroaching_vertex_candidate = q
+
+                    if encroaching_vertex_candidate is not None:
+                        if e.length > max_length:
+                            max_length = e.length
+                            worst_edge = e
+                            encroaching_vertex = encroaching_vertex_candidate
+
+            if worst_edge is None:
+                logging.debug("No more encroached edges")
+                return None, None
+            else:
+                return worst_edge, encroaching_vertex
+
     def split_all_encroached_edges(self):
         """
         For all boundary edges, check if they are encroached. Split the longest
@@ -436,21 +497,14 @@ class Triangulation:
         encroached
         """
         while True:
-            max_length = 0
-            worst_edge = None
-            for e in self.undirected_edges:
-                if e.is_boundary or e.sym.is_boundary:
-                    if e.o_next.destination.encroaches(e) or \
-                       e.o_prev.destination.encroaches(e):
-                        if e.length > max_length:
-                            max_length = e.length
-                            worst_edge = e
+            worst_edge, v = self.worst_encroached_edge()
             if worst_edge is None:
-                logging.debug("No more encroached edges")
                 break
             else:
                 logging.debug("Splitting edge {}".format(worst_edge))
-                self.split_edge(worst_edge)
+                s0, s1 = worst_edge.selection_segment(v)
+                split = self.scan_segment(worst_edge, s0, s1)
+                self.insert_point(split)
 
     def interpolated_map(self):
         """
