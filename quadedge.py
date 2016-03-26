@@ -301,6 +301,9 @@ class Vertex:
             b = e.destination - self
             return a * b <= 0
 
+    def det(self, v):
+        return self.x * v.y - self.y * v.x
+
     @property
     def star(self):
         start = e = self.edge
@@ -344,7 +347,7 @@ class Triangle:
     def interpolate(self, x, y):
         return self.a * x + self.b * y + self.c
     
-    def find_circumcenter(self,  triangulation, within_triangulation=False):
+    def circumcenter(self, triangulation=None, within_triangulation=False):
             v0 = self.anchor.destination - self.anchor.origin
             v1 = self.anchor.l_next.destination - self.anchor.origin
             
@@ -354,7 +357,7 @@ class Triangle:
             
             circumcenter = Vertex(c_x, c_y) + self.anchor.origin
             
-            if within_triangulation:
+            if within_triangulation and triangulation is not None:
                 boundary_edge = None
                 if circumcenter.x > triangulation.maxX:
                     circumcenter.x = triangulation.maxX
@@ -417,6 +420,23 @@ class Triangle:
             dx, dy = dx_circumcenter, dy_circumcenter
 
         return Vertex(vo.x + dx, vo.y + dy)
+
+    def selection_disk(self, b=2**0.5):
+        """
+        Find the selection disk of a bad triangle, which contains all the points
+        that can be added to the triangulation to destroy the bad triangle.
+        Definition taken from Chernikov, A.N. and Chrisochoides, N.P., 2006.
+        Generalized Delaunay mesh refinement: From scalar to parallel. In
+        Proceedings of the 15th International Meshing Roundtable (pp. 563-580).
+        Springer Berlin Heidelberg.
+        :param b: Circumradius-to-shortest-edge ratio threshold for bad
+        triangles
+        :return: Vertex at the center of the selection disk and the selection
+        disk radius. If the triangle is not bad, the radius will be 0.
+        """
+        center = Vertex(*self.circumcenter().pos[:2])
+        radius = max(self.circumradius - b * self.edge_lengths[0],0)
+        return center, radius
 
     @property
     def coordinate_list(self):

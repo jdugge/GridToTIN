@@ -389,8 +389,8 @@ class Triangulation:
 
         for i in range(d):
             v = s0 + i * step * a
-            x = round(v.x)
-            y = round(v.y)
+            x = int(round(v.x))
+            y = int(round(v.y))
 
             z_map = self.Hmap[y, x]
             interpolation = e.triangle.interpolate(x, y)
@@ -398,6 +398,30 @@ class Triangulation:
             if error > max_error:
                 max_error = error
                 worst_vertex = Vertex(x, y)
+        return worst_vertex
+
+    def scan_circle(self, center, radius):
+        max_error = 0
+        worst_vertex = None
+
+        y_start = (max(round(center.y - radius), self.minY))
+        y_end = (min(round(radius + 1 + center.y), self.maxY))
+        print(y_start, y_end)
+
+        for y in range(y_start, y_end):
+            x_max = max((radius)**2 - round(y-center.y)**2, 0)**0.5
+            x_start = int(max(round(center.x - x_max), self.minX))
+            x_end = int(min(round(x_max + 1 + center.x), self.maxX))
+            for x in range(x_start, x_end):
+                triangle = self.search(center).triangle
+
+                z_map = self.Hmap[y, x]
+                interpolation = triangle.interpolate(x, y)
+                error = abs(interpolation - z_map)
+                if error > max_error:
+                    max_error = error
+                    worst_vertex = Vertex(x, y)
+
         return worst_vertex
 
     def insert_point(self, v, e=None):
@@ -541,7 +565,7 @@ class Triangulation:
             bad_triangles.sort(key=lambda x: x.radius_edge_ratio)
             return bad_triangles
 
-    def fix_worst_triangle(self, worst_triangle=None):
+    def fix_worst_triangle(self, worst_triangle=None, use_selection_disk=False):
         """
         Find the worst triangle (in terms of circumradius-to-shortest-edge
         ratio) and try to insert its off-center. If the off-center would
@@ -560,14 +584,19 @@ class Triangulation:
                 worst_triangle = bad_triangles[0]
 
         logging.debug("Fixing bad triangle {}".format(worst_triangle))
-        oc = worst_triangle.offcenter()
-        oc.x = int(oc.x)
-        oc.y = int(oc.y)
+        if use_selection_disk:
+            c, r = worst_triangle.selection_disk()
+            v = self.scan_circle(c, r)
+        else:
+            v = worst_triangle.offcenter()
 
-        logging.debug("Trying to insert off-center {}".format(oc))
+        v.x = int(v.x)
+        v.y = int(v.y)
+
+        logging.debug("Trying to insert off-center {}".format(v))
         encroachment = False
         for e in self.boundary_edges():
-            if oc.encroaches(e):
+            if v.encroaches(e):
                 encroachment = True
                 logging.debug("Off-center would encroach {}".format(e) +
                               ", splitting edge instead")
@@ -575,9 +604,9 @@ class Triangulation:
 
         if not encroachment:
             logging.debug("Inserting off-center")
-            self.insert_point(oc)
+            self.insert_point(v)
 
-    def fix_all_bad_triangles(self):
+    def fix_all_bad_triangles(self, use_selection_disk=False):
         """
         While there are still bad triangles, insert Steiner points and split
         encroached edges
@@ -585,7 +614,7 @@ class Triangulation:
         bad_triangles = self.bad_triangles()
         while bad_triangles is not None:
             worst_triangle = bad_triangles[0]
-            self.fix_worst_triangle(worst_triangle)
+            self.fix_worst_triangle(worst_triangle, use_selection_disk)
             self.split_all_encroached_edges()
             bad_triangles = self.bad_triangles()
         logging.debug("No bad triangles")
