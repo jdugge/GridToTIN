@@ -16,56 +16,53 @@ logging.basicConfig(level=logging.DEBUG)
 
 
 class Triangulation:
-    def __init__(self, DEM):
-        if isinstance(DEM, np.ndarray):
-            H = DEM
-            self.Hmap = H
-        elif isinstance(DEM, str):
+    def __init__(self, dem, minimum_gap=5):
+        if isinstance(dem, np.ndarray):
+            self.dem = dem
+        elif isinstance(dem, str):
             with rasterio.drivers():
-                with rasterio.open(DEM) as src:
+                with rasterio.open(dem) as src:
                     rawdata = src.read()
-                    H = np.array(rawdata.squeeze()[50:-50, 50:-50], dtype=float)
-                    self.Hmap = H
+                    self.dem = np.array(rawdata.squeeze(), dtype=float)
 
+        self.minimum_gap = minimum_gap
 
-        minX = 0
-        minY = 0
-        maxX = self.Hmap.shape[1] - 1
-        maxY = self.Hmap.shape[0] - 1
+        min_x = 0
+        min_y = 0
+        max_x = self.dem.shape[1] - 1
+        max_y = self.dem.shape[0] - 1
 
         self.heap = Heap()
         self.triangle_list = []
 
-#        assert maxX > minX
-#        assert maxY > minY
-#
-        self.minX = minX
-        self.minY = minY
-        self.maxX = maxX
-        self.maxY = maxY
+        self.min_x = min_x
+        self.min_y = min_y
+        self.max_x = max_x
+        self.max_y = max_y
 
-        rangeX = maxX - minX
-        rangeY = maxY - minY
+        self.available = np.ones_like(self.dem)
 
         self.vertex_dict = dict()
         self.edge_dict = dict()
 
-        v0 = Vertex(minX, minY, self.Hmap[0,   0])
-        v1 = Vertex(maxX, minY, self.Hmap[0,  -1])
-        v2 = Vertex(maxX, maxY, self.Hmap[-1, -1])
-        v3 = Vertex(minX, maxY, self.Hmap[-1,  0])
+        v0 = Vertex(min_x, min_y, self.dem[0, 0])
+        v1 = Vertex(max_x, min_y, self.dem[0, -1])
+        v2 = Vertex(max_x, max_y, self.dem[-1, -1])
+        v3 = Vertex(min_x, max_y, self.dem[-1, 0])
 
         self.vertex_dict[0] = v0
         self.vertex_dict[1] = v1
         self.vertex_dict[2] = v2
         self.vertex_dict[3] = v3
-        self.nextVertexid = 4
+        self.next_vertex_id = 4
 
         self.next_edge_id = 0
+        # Boundary rectangle
         q0 = make_edge(v0, v1)
         q1 = make_edge(v2, v3)
         q2 = make_edge(v3, v0)
         q3 = make_edge(v1, v2)
+        # Diagonal
         q4 = make_edge(v1, v3)
 
         splice(q0.sym, q4)
@@ -79,6 +76,23 @@ class Triangulation:
         self.add_edge(q1)
         self.add_edge(q2)
         self.add_edge(q3)
+
+        # Mark area around border edges as unavailable
+        for e in self.edges:
+            self.mark_availability(e.origin,
+                                   e.destination,
+                                   radius=self.minimum_gap,
+                                   value=0)
+        # Mark area on border edges themselves as available
+        for e in self.edges:
+            self.mark_availability(e.origin,
+                                   e.destination,
+                                   radius=0,
+                                   value=1)
+        # Mark area around border vertices as unavailable
+        for v in self.vertices:
+            self.mark_availability(v, radius=minimum_gap, value=0)
+
         self.add_edge(q4)
 
         self.base = q0
@@ -192,7 +206,7 @@ class Triangulation:
 
         # Get elevation from map if none was provided in vertex
         if v.z == 0:
-            v.z = self.Hmap[v.y, v.x]
+            v.z = self.dem[v.y, v.x]
 
         if e is None:
             e = self.search(v)
@@ -216,8 +230,8 @@ class Triangulation:
             parents = [e.triangle]
 
         # Add point to triangulation
-        self.vertex_dict[self.nextVertexid] = v
-        self.nextVertexid += 1
+        self.vertex_dict[self.next_vertex_id] = v
+        self.next_vertex_id += 1
 
         # Create first spoke from origin of base to new site
         spoke = make_edge(e.origin, v)
@@ -287,6 +301,7 @@ class Triangulation:
         created_triangles = list(set(created_triangles) -
                                  set(deleted_triangles))
 
+        self.mark_availability(v, radius=self.minimum_gap, value=0)
         return created_triangles, deleted_triangles
 
     def find_nearest_boundary_edge(self, vertex):
@@ -309,7 +324,7 @@ class Triangulation:
                 or not vertex.left_of(edge):
             edge = edge.l_next
 
-    def scan_triangle(self, t, interpolation_map=None):
+    def scan_triangle(self, t, interpolation_map=None, only_return_points=False):
         v0, v1, v2 = t.vertices
 
         # Sort vertices in ascending order
@@ -333,9 +348,13 @@ class Triangulation:
         x_a     = v0.x
         x_b     = v0.x
 
+        points = []
         # If the base of the triangle is flat, this loop won't be executed
         for y in range(y_start, y_end):
-            self.scan_triangle_line(t, y, x_a, x_b, interpolation_map)
+            points.extend(self.scan_triangle_line(t, y,
+                                                  x_a, x_b,
+                                                  interpolation_map,
+                                                  only_return_points))
             x_a += dx0
             x_b += dx1
 
@@ -352,22 +371,34 @@ class Triangulation:
 
         # If the top of the triangle is flat, this loop will be executed once
         for y in range(y_start, y_end + 1):
-            self.scan_triangle_line(t, y, x_a, x_b, interpolation_map)
+            points.extend(self.scan_triangle_line(t, y,
+                                                  x_a, x_b,
+                                                  interpolation_map,
+                                                  only_return_points))
             x_a += dx0
             x_b += dx1
 
-    def scan_triangle_line(self, t, y, x_a, x_b, interpolation_map=None):
+        if only_return_points:
+            return points
+
+    def scan_triangle_line(self, t, y, x_a, x_b, interpolation_map=None,
+                           only_return_points = False):
         x_start = int(ceil(min(x_a, x_b)))
         x_end   = int(floor(max(x_a, x_b)))
 
+        points = []
         for x in range(x_start, x_end + 1):
-            z_map = self.Hmap[y, x]
-            error = abs(z_map - t.interpolate(x, y))
-            if interpolation_map is not None:
-                interpolation_map[y,x] = t.interpolate(x,y)
-            if error > t.candidate_error:
-                t.candidate_error = error
-                t.candidate.pos = (x, y, z_map)
+            if only_return_points:
+                points.append((x,y))
+            else:
+                z_map = self.dem[y, x]
+                error = abs(z_map - t.interpolate(x, y))
+                if interpolation_map is not None:
+                    interpolation_map[y,x] = t.interpolate(x,y)
+                if error > t.candidate_error and self.available[y, x] == 1:
+                    t.candidate_error = error
+                    t.candidate.pos = (x, y, z_map)
+        return points
 
     def scan_segment(self, e, s0, s1):
         """
@@ -392,35 +423,81 @@ class Triangulation:
             x = int(round(v.x))
             y = int(round(v.y))
 
-            z_map = self.Hmap[y, x]
-            interpolation = e.triangle.interpolate(x, y)
-            error = abs(interpolation - z_map)
-            if error > max_error:
-                max_error = error
-                worst_vertex = Vertex(x, y)
+            if self.available[y, x] == 1:
+                z_map = self.dem[y, x]
+                interpolation = e.triangle.interpolate(x, y)
+                error = abs(interpolation - z_map)
+                if error > max_error:
+                    max_error = error
+                    worst_vertex = Vertex(x, y)
         return worst_vertex
+
+    def circle_points(self, center, radius):
+        circle_points = []
+        y_start = (max(round(center.y - radius), self.min_y))
+        y_end = (min(round(radius + 1 + center.y), self.max_y + 1))
+
+        for y in range(y_start, y_end):
+            x_max = max(radius**2 - (y-center.y)**2, 0)**0.5
+            x_start = int(max(round(center.x - x_max), self.min_x))
+            x_end = int(min(round(x_max + 1 + center.x), self.max_x))
+            for x in range(x_start, x_end + 1):
+                circle_points.append((x,y))
+
+        return circle_points
+
+    def segment_points(self, s0, s1):
+        """
+        Find all points along the selection segment of an edge
+        :param s0: starting vertex of segment
+        :param s1: ending vertex of segment
+        :return: list of 2D coordinates along segment
+        """
+        segment_points = []
+        a = s1 - s0
+        d = ceil(a.norm)
+
+        step = 1 / d
+
+        for i in range(d):
+            v = s0 + i * step * a
+            x = int(round(v.x))
+            y = int(round(v.y))
+            segment_points.append((x, y))
+        return segment_points
+
+    def mark_availability(self, v0, v1=None, radius=0, value=0):
+        if v1 is not None:
+            segment_points = self.segment_points(v0, v1)
+        else:
+            segment_points = [(v0.x, v0.y)]
+
+        for s in segment_points:
+            cp = self.circle_points(Vertex(s[0], s[1]), radius)
+            for p in cp:
+                self.available[p[1], p[0]] = value
 
     def scan_circle(self, center, radius):
         max_error = 0
         worst_vertex = None
 
-        y_start = (max(round(center.y - radius), self.minY))
-        y_end = (min(round(radius + 1 + center.y), self.maxY))
-        print(y_start, y_end)
+        y_start = (max(round(center.y - radius), self.min_y))
+        y_end = (min(round(radius + 1 + center.y), self.max_y))
 
         for y in range(y_start, y_end):
-            x_max = max((radius)**2 - round(y-center.y)**2, 0)**0.5
-            x_start = int(max(round(center.x - x_max), self.minX))
-            x_end = int(min(round(x_max + 1 + center.x), self.maxX))
+            x_max = max(radius**2 - round(y-center.y)**2, 0)**0.5
+            x_start = int(max(round(center.x - x_max), self.min_x))
+            x_end = int(min(round(x_max + 1 + center.x), self.max_x))
             for x in range(x_start, x_end):
-                triangle = self.search(center).triangle
+                if self.available[y, x] == 1:
+                    triangle = self.search(center).triangle
 
-                z_map = self.Hmap[y, x]
-                interpolation = triangle.interpolate(x, y)
-                error = abs(interpolation - z_map)
-                if error > max_error:
-                    max_error = error
-                    worst_vertex = Vertex(x, y)
+                    z_map = self.dem[y, x]
+                    interpolation = triangle.interpolate(x, y)
+                    error = abs(interpolation - z_map)
+                    if error > max_error:
+                        max_error = error
+                        worst_vertex = Vertex(x, y)
 
         return worst_vertex
 
@@ -446,6 +523,7 @@ class Triangulation:
             self.scan_triangle(triangle)
             triangle.id = self.heap.insert(triangle.candidate_error,
                                            (triangle.candidate, triangle))
+        self.mark_availability(v, radius=self.minimum_gap, value=0)
         self.triangle_list.extend(new)
 
     def insert_next(self):
@@ -536,7 +614,7 @@ class Triangulation:
         mesh
         :return:
         """
-        interpolated_map = self.Hmap.copy()
+        interpolated_map = self.dem.copy()
         for triangle in self.triangles:
             self.scan_triangle(triangle, interpolated_map)
         return interpolated_map
@@ -547,7 +625,7 @@ class Triangulation:
         height map
         :return:
         """
-        error_map = self.Hmap.copy() - self.interpolated_map()
+        error_map = self.dem.copy() - self.interpolated_map()
         return error_map
 
     def bad_triangles(self, b=2**0.5, ):

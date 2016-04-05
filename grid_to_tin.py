@@ -85,19 +85,29 @@ usemtl material0\n
                        np.dstack([triangles, triangles]).reshape(-1,6) + 1,
                        fmt="f %i/%i/ %i/%i/ %i/%i/")
 
+
 def main(argv):
     inputfile = argv[0]
     nvertices = int(argv[1])
     outputfile = argv[2]
     z_scale = float(argv[3])
+    mode = argv[4]
+    minimum_gap = int(argv[5])
 
     with rasterio.open(inputfile) as file:
         raster = file.read().astype(float).squeeze()
         affine = file.affine
 
-    t = tri.Triangulation(raster)
-    for i in range(nvertices):
-        t.insert_next()
+    t = tri.Triangulation(raster, minimum_gap=minimum_gap)
+
+    if mode == 'basic':
+        for i in range(nvertices):
+            t.insert_next()
+    elif mode == 'selection':
+        while len(t.vertices) <= nvertices:
+            t.insert_next()
+            t.split_all_encroached_edges()
+            t.fix_all_bad_triangles()
 
     vertices = np.array([affine * v.pos[:2] + tuple([v.pos[2] * z_scale]) for v in t.vertices])
     triangles = [[ t.vertices.index(vertex) for vertex in triangle.vertices][::-1]
